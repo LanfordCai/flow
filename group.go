@@ -59,23 +59,15 @@ func (_Groups) NewSingleton(otx *sql.Tx, uid UserID) (GroupID, error) {
 	INSERT INTO wf_groups_master(name, group_type)
 	SELECT u.email, 'S'
 	FROM wf_users_master u
-	WHERE u.id = ?
+	WHERE u.id = $1 RETURNING id
 	`
-	res, err := tx.Exec(q, uid)
-	if err != nil {
-		return 0, err
-	}
 	var gid int64
-	gid, err = res.LastInsertId()
+	err = tx.QueryRow(q, uid).Scan(&gid)
 	if err != nil {
 		return 0, err
 	}
 
-	res, err = tx.Exec("INSERT INTO wf_group_users(group_id, user_id) VALUES(?, ?)", gid, uid)
-	if err != nil {
-		return 0, err
-	}
-	_, err = res.LastInsertId()
+	_, err = tx.Exec("INSERT INTO wf_group_users(group_id, user_id) VALUES($1, $2)", gid, uid)
 	if err != nil {
 		return 0, err
 	}
@@ -117,12 +109,8 @@ func (_Groups) New(otx *sql.Tx, name string, gtype string) (GroupID, error) {
 		tx = otx
 	}
 
-	res, err := tx.Exec("INSERT INTO wf_groups_master(name, group_type) VALUES(?, ?)", name, gtype)
-	if err != nil {
-		return 0, err
-	}
 	var id int64
-	id, err = res.LastInsertId()
+	err = tx.QueryRow("INSERT INTO wf_groups_master(name, group_type) VALUES($1, $2) RETURNING id", name, gtype).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -155,7 +143,7 @@ func (_Groups) List(offset, limit int64) ([]*Group, error) {
 	SELECT id, name, group_type
 	FROM wf_groups_master
 	ORDER BY id
-	LIMIT ? OFFSET ?
+	LIMIT $1 OFFSET $2
 	`
 	rows, err := db.Query(q, limit, offset)
 	if err != nil {
@@ -186,7 +174,7 @@ func (_Groups) Get(id GroupID) (*Group, error) {
 	}
 
 	var elem Group
-	row := db.QueryRow("SELECT id, name, group_type FROM wf_groups_master WHERE id = ?", id)
+	row := db.QueryRow("SELECT id, name, group_type FROM wf_groups_master WHERE id = $1", id)
 	err := row.Scan(&elem.ID, &elem.Name, &elem.GroupType)
 	if err != nil {
 		return nil, err
@@ -203,7 +191,7 @@ func (_Groups) Rename(otx *sql.Tx, id GroupID, name string) error {
 	}
 
 	var elem Group
-	row := db.QueryRow("SELECT id, name, group_type FROM wf_groups_master WHERE id = ?", id)
+	row := db.QueryRow("SELECT id, name, group_type FROM wf_groups_master WHERE id = $1", id)
 	err := row.Scan(&elem.ID, &elem.Name, &elem.GroupType)
 	if err != nil {
 		return err
@@ -223,7 +211,7 @@ func (_Groups) Rename(otx *sql.Tx, id GroupID, name string) error {
 		tx = otx
 	}
 
-	_, err = tx.Exec("UPDATE wf_groups_master SET name = ? WHERE id = ?", name, id)
+	_, err = tx.Exec("UPDATE wf_groups_master SET name = $1 WHERE id = $2", name, id)
 	if err != nil {
 		return err
 	}
@@ -245,7 +233,7 @@ func (_Groups) Delete(otx *sql.Tx, id GroupID) error {
 		return errors.New("group ID must be a positive integer")
 	}
 
-	row := db.QueryRow("SELECT group_type FROM wf_groups_master WHERE id = ?", id)
+	row := db.QueryRow("SELECT group_type FROM wf_groups_master WHERE id = $1", id)
 	var gtype string
 	err := row.Scan(&gtype)
 	if err != nil {
@@ -255,7 +243,7 @@ func (_Groups) Delete(otx *sql.Tx, id GroupID) error {
 		return errors.New("singleton groups cannot be deleted")
 	}
 
-	row = db.QueryRow("SELECT COUNT(*) FROM wf_ac_group_roles WHERE group_id = ?", id)
+	row = db.QueryRow("SELECT COUNT(*) FROM wf_ac_group_roles WHERE group_id = $1", id)
 	var n int64
 	err = row.Scan(&n)
 	if n > 0 {
@@ -273,11 +261,11 @@ func (_Groups) Delete(otx *sql.Tx, id GroupID) error {
 		tx = otx
 	}
 
-	_, err = tx.Exec("DELETE FROM wf_group_users WHERE group_id = ?", id)
+	_, err = tx.Exec("DELETE FROM wf_group_users WHERE group_id = $1", id)
 	if err != nil {
 		return err
 	}
-	res, err := tx.Exec("DELETE FROM wf_groups_master WHERE id = ?", id)
+	res, err := tx.Exec("DELETE FROM wf_groups_master WHERE id = $1", id)
 	if err != nil {
 		return err
 	}
@@ -302,7 +290,7 @@ func (_Groups) Users(gid GroupID) ([]*User, error) {
 	SELECT um.id, um.first_name, um.last_name, um.email, um.active
 	FROM wf_users_master um
 	JOIN wf_group_users gu ON gu.user_id = um.id
-	WHERE gu.group_id = ?
+	WHERE gu.group_id = $1
 	`
 	rows, err := db.Query(q, gid)
 	if err != nil {
@@ -331,8 +319,8 @@ func (_Groups) Users(gid GroupID) ([]*User, error) {
 func (_Groups) HasUser(gid GroupID, uid UserID) (bool, error) {
 	q := `
 	SELECT id FROM wf_group_users
-	WHERE group_id = ?
-	AND user_id = ?
+	WHERE group_id = $1
+	AND user_id = $2
 	ORDER BY id
 	LIMIT 1
 	`
@@ -359,7 +347,7 @@ func (_Groups) SingletonUser(gid GroupID) (*User, error) {
 	FROM wf_users_master um
 	JOIN wf_group_users gus ON gus.user_id = um.id
 	JOIN wf_groups_master gm ON gus.group_id = gm.id
-	WHERE gm.id = ?
+	WHERE gm.id = $1
 	AND gm.group_type = 'S'
 	ORDER BY um.id
 	LIMIT 1
@@ -396,7 +384,7 @@ func (_Groups) AddUser(otx *sql.Tx, gid GroupID, uid UserID) error {
 	}
 
 	var gtype string
-	row := tx.QueryRow("SELECT group_type FROM wf_groups_master WHERE id = ?", gid)
+	row := tx.QueryRow("SELECT group_type FROM wf_groups_master WHERE id = $1", gid)
 	err = row.Scan(&gtype)
 	if err != nil {
 		return err
@@ -405,7 +393,7 @@ func (_Groups) AddUser(otx *sql.Tx, gid GroupID, uid UserID) error {
 		return errors.New("cannot add users to singleton groups")
 	}
 
-	_, err = tx.Exec("INSERT INTO wf_group_users(group_id, user_id) VALUES(?, ?)", gid, uid)
+	_, err = tx.Exec("INSERT INTO wf_group_users(group_id, user_id) VALUES($1, $2)", gid, uid)
 	if err != nil {
 		return err
 	}
@@ -439,7 +427,7 @@ func (_Groups) RemoveUser(otx *sql.Tx, gid GroupID, uid UserID) error {
 	}
 
 	var gtype string
-	row := tx.QueryRow("SELECT group_type FROM wf_groups_master WHERE id = ?", gid)
+	row := tx.QueryRow("SELECT group_type FROM wf_groups_master WHERE id = $1", gid)
 	err = row.Scan(&gtype)
 	if err != nil {
 		return err
@@ -448,7 +436,7 @@ func (_Groups) RemoveUser(otx *sql.Tx, gid GroupID, uid UserID) error {
 		return errors.New("cannot remove users from singleton groups")
 	}
 
-	res, err := tx.Exec("DELETE FROM wf_group_users WHERE group_id = ? AND user_id = ?", gid, uid)
+	res, err := tx.Exec("DELETE FROM wf_group_users WHERE group_id = $1 AND user_id = $2", gid, uid)
 	if err != nil {
 		return err
 	}

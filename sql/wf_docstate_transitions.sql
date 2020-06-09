@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS wf_docstate_transitions;
 --
 
 CREATE TABLE wf_docstate_transitions (
-    id INT NOT NULL AUTO_INCREMENT,
+    id SERIAL,
     doctype_id INT NOT NULL,
     from_state_id INT NOT NULL,
     docaction_id INT NOT NULL,

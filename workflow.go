@@ -67,7 +67,7 @@ func (w *Workflow) ApplyEvent(otx *sql.Tx, event *DocEvent, recipients []GroupID
 	}
 
 	var gt string
-	tq := `SELECT group_type FROM wf_groups_master WHERE id = ?`
+	tq := `SELECT group_type FROM wf_groups_master WHERE id = $1`
 	row := db.QueryRow(tq, event.Group)
 	err = row.Scan(&gt)
 	if err != nil {
@@ -142,13 +142,10 @@ func (_Workflows) New(otx *sql.Tx, name string, dtype DocTypeID, state DocStateI
 
 	q := `
 	INSERT INTO wf_workflows(name, doctype_id, docstate_id, active)
-	VALUES(?, ?, ?, 1)
+	VALUES($1, $2, $3, 1) RETURNING id
 	`
-	res, err := tx.Exec(q, name, dtype, state)
-	if err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
+	var id int64
+	err = tx.QueryRow(q, name, dtype, state).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -183,7 +180,7 @@ func (_Workflows) List(offset, limit int64) ([]*Workflow, error) {
 	JOIN wf_doctypes_master dtm ON wf.doctype_id = dtm.id
 	JOIN wf_docstates_master dsm ON wf.docstate_id = dsm.id
 	ORDER BY wf.id
-	LIMIT ? OFFSET ?
+	LIMIT $1 OFFSET $2
 	`
 	rows, err := db.Query(q, limit, offset)
 	if err != nil {
@@ -220,7 +217,7 @@ func (_Workflows) Get(id WorkflowID) (*Workflow, error) {
 	FROM wf_workflows wf
 	JOIN wf_doctypes_master dtm ON dtm.id = wf.doctype_id
 	JOIN wf_docstates_master dsm ON dsm.id = wf.docstate_id
-	WHERE wf.id = ?
+	WHERE wf.id = $1
 	`
 	row := db.QueryRow(q, id)
 	var elem Workflow
@@ -245,7 +242,7 @@ func (_Workflows) GetByDocType(dtid DocTypeID) (*Workflow, error) {
 	FROM wf_workflows wf
 	JOIN wf_doctypes_master dtm ON dtm.id = wf.doctype_id
 	JOIN wf_docstates_master dsm ON dsm.id = wf.docstate_id
-	WHERE wf.doctype_id = ?
+	WHERE wf.doctype_id = $1
 	`
 	row := db.QueryRow(q, dtid)
 	var elem Workflow
@@ -270,7 +267,7 @@ func (_Workflows) GetByName(name string) (*Workflow, error) {
 	FROM wf_workflows wf
 	JOIN wf_doctypes_master dtm ON wf.doctype_id = dtm.id
 	JOIN wf_docstates_master dsm ON wf.docstate_id = dsm.id
-	WHERE wf.name = ?
+	WHERE wf.name = $1
 	`
 	row := db.QueryRow(q, name)
 	var elem Workflow
@@ -303,8 +300,8 @@ func (_Workflows) Rename(otx *sql.Tx, id WorkflowID, name string) error {
 	}
 
 	q := `
-	UPDATE wf_workflows SET name = ?
-	WHERE id = ?
+	UPDATE wf_workflows SET name = $1
+	WHERE id = $2
 	`
 	_, err = tx.Exec(q, name, id)
 	if err != nil {
@@ -341,8 +338,8 @@ func (_Workflows) SetActive(otx *sql.Tx, id WorkflowID, active bool) error {
 		flag = 1
 	}
 	q := `
-	UPDATE wf_workflows SET active = ?
-	WHERE id = ?
+	UPDATE wf_workflows SET active = $1
+	WHERE id = $2
 	`
 	_, err = tx.Exec(q, flag, id)
 	if err != nil {
@@ -383,13 +380,10 @@ func (_Workflows) AddNode(otx *sql.Tx, dtype DocTypeID, state DocStateID,
 
 	q := `
 	INSERT INTO wf_workflow_nodes(doctype_id, docstate_id, ac_id, workflow_id, name, type)
-	VALUES(?, ?, ?, ?, ?, ?)
+	VALUES($1, $2, $3, $4, $5, $6)
 	`
-	res, err := tx.Exec(q, dtype, state, ac, wid, name, string(ntype))
-	if err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
+	var id int64
+	err = tx.QueryRow(q, dtype, state, ac, wid, name, string(ntype)).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -422,8 +416,8 @@ func (_Workflows) RemoveNode(otx *sql.Tx, wid WorkflowID, nid NodeID) error {
 
 	q := `
 	DELETE FROM wf_workflow_nodes
-	WHERE workflow_id = ?
-	AND id = ?
+	WHERE workflow_id = $1
+	AND id = $2
 	`
 	_, err = tx.Exec(q, wid, nid)
 	if err != nil {

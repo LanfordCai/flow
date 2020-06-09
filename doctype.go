@@ -82,25 +82,21 @@ func (_DocTypes) New(otx *sql.Tx, name string) (DocTypeID, error) {
 		tx = otx
 	}
 
-	res, err := tx.Exec("INSERT INTO wf_doctypes_master(name) VALUES(?)", name)
-	if err != nil {
-		return 0, err
-	}
 	var id int64
-	id, err = res.LastInsertId()
+	err = tx.QueryRow("INSERT INTO wf_doctypes_master (name) VALUES ($1) RETURNING id", name).Scan(&id)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("insert failed %w", err)
 	}
 
 	tbl := DocTypes.docStorName(DocTypeID(id))
 	q := `DROP TABLE IF EXISTS ` + tbl
-	res, err = tx.Exec(q)
+	_, err = tx.Exec(q)
 	if err != nil {
 		return 0, err
 	}
 	q = `
 	CREATE TABLE ` + tbl + ` (
-		id INT NOT NULL AUTO_INCREMENT,
+		id SERIAL,
 		path VARCHAR(1000) NOT NULL,
 		ac_id INT NOT NULL,
 		docstate_id INT NOT NULL,
@@ -114,7 +110,7 @@ func (_DocTypes) New(otx *sql.Tx, name string) (DocTypeID, error) {
 		FOREIGN KEY (group_id) REFERENCES wf_groups_master(id)
 	)
 	`
-	res, err = tx.Exec(q)
+	_, err = tx.Exec(q)
 	if err != nil {
 		return 0, err
 	}
@@ -146,7 +142,7 @@ func (_DocTypes) List(offset, limit int64) ([]*DocType, error) {
 	SELECT id, name
 	FROM wf_doctypes_master
 	ORDER BY id
-	LIMIT ? OFFSET ?
+	LIMIT $1 OFFSET $2
 	`
 	rows, err := db.Query(q, limit, offset)
 	if err != nil {
@@ -177,7 +173,7 @@ func (_DocTypes) Get(id DocTypeID) (*DocType, error) {
 	}
 
 	var elem DocType
-	row := db.QueryRow("SELECT id, name FROM wf_doctypes_master WHERE id = ?", id)
+	row := db.QueryRow("SELECT id, name FROM wf_doctypes_master WHERE id = $1", id)
 	err := row.Scan(&elem.ID, &elem.Name)
 	if err != nil {
 		return nil, err
@@ -195,7 +191,7 @@ func (_DocTypes) GetByName(name string) (*DocType, error) {
 	}
 
 	var elem DocType
-	row := db.QueryRow("SELECT id, name FROM wf_doctypes_master WHERE name = ?", name)
+	row := db.QueryRow("SELECT id, name FROM wf_doctypes_master WHERE name = $1", name)
 	err := row.Scan(&elem.ID, &elem.Name)
 	if err != nil {
 		return nil, err
@@ -223,7 +219,7 @@ func (_DocTypes) Rename(otx *sql.Tx, id DocTypeID, name string) error {
 		tx = otx
 	}
 
-	_, err = tx.Exec("UPDATE wf_doctypes_master SET name = ? WHERE id = ?", name, id)
+	_, err = tx.Exec("UPDATE wf_doctypes_master SET name = $1 WHERE id = $2", name, id)
 	if err != nil {
 		return err
 	}
@@ -262,12 +258,12 @@ func (_DocTypes) Transitions(dtype DocTypeID, from DocStateID) (map[DocStateID]*
 	JOIN wf_docstates_master dsm1 ON dsm1.id = dst.from_state_id
 	JOIN wf_docstates_master dsm2 ON dsm2.id = dst.to_state_id
 	JOIN wf_docactions_master dam ON dam.id = dst.docaction_id
-	WHERE dst.doctype_id = ?
+	WHERE dst.doctype_id = $1
 	`
 	var rows *sql.Rows
 	var err error
 	if from > 0 {
-		q += `AND dst.from_state_id = ?
+		q += `AND dst.from_state_id = $2
 		`
 		rows, err = db.Query(q, dtype, from)
 	} else {
@@ -313,8 +309,8 @@ func (_DocTypes) _Transitions(dtype DocTypeID, state DocStateID) (map[DocActionI
 	q := `
 	SELECT docaction_id, to_state_id
 	FROM wf_docstate_transitions
-	WHERE doctype_id = ?
-	AND from_state_id = ?
+	WHERE doctype_id = $1
+	AND from_state_id = $2
 	`
 	rows, err := db.Query(q, dtype, state)
 	if err != nil {
@@ -357,7 +353,7 @@ func (_DocTypes) AddTransition(otx *sql.Tx, dtype DocTypeID, state DocStateID,
 
 	q := `
 	INSERT INTO wf_docstate_transitions(doctype_id, from_state_id, docaction_id, to_state_id)
-	VALUES(?, ?, ?, ?)
+	VALUES($1, $2, $3, $4)
 	`
 	_, err = tx.Exec(q, dtype, state, action, toState)
 	if err != nil {
@@ -391,9 +387,9 @@ func (_DocTypes) RemoveTransition(otx *sql.Tx, dtype DocTypeID, state DocStateID
 
 	q := `
 	DELETE FROM wf_docstate_transitions
-	WHERE doctype_id = ?
-	AND from_state_id =?
-	AND docaction_id = ?
+	WHERE doctype_id = $1
+	AND from_state_id = $2
+	AND docaction_id = $3
 	`
 	_, err = tx.Exec(q, dtype, state, action)
 	if err != nil {

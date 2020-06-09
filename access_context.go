@@ -17,6 +17,7 @@ package flow
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 )
@@ -98,12 +99,9 @@ func (_AccessContexts) New(otx *sql.Tx, name string) (AccessContextID, error) {
 		tx = otx
 	}
 
-	q := `INSERT INTO wf_access_contexts(name, active) VALUES(?, 1)`
-	res, err := tx.Exec(q, name)
-	if err != nil {
-		return 0, err
-	}
-	acID, err := res.LastInsertId()
+	var acID int64
+	q := `INSERT INTO wf_access_contexts(name, active) VALUES($1, 1) RETURNING id`
+	err = tx.QueryRow(q, name).Scan(&acID)
 	if err != nil {
 		return 0, err
 	}
@@ -141,16 +139,16 @@ func (_AccessContexts) List(prefix string, offset, limit int64) ([]*AccessContex
 		SELECT id, name, active
 		FROM wf_access_contexts
 		ORDER BY id
-		LIMIT ? OFFSET ?
+		LIMIT $1 OFFSET $2
 		`
 		rows, err = db.Query(q, limit, offset)
 	} else {
 		q = `
 		SELECT id, name, active
 		FROM wf_access_contexts
-		WHERE name LIKE ?
+		WHERE name LIKE $1
 		ORDER BY id
-		LIMIT ? OFFSET ?
+		LIMIT $2 OFFSET $3
 		`
 		rows, err = db.Query(q, prefix+"%", limit, offset)
 	}
@@ -194,9 +192,9 @@ func (_AccessContexts) ListByGroup(gid GroupID, offset, limit int64) ([]*AccessC
 	SELECT ac.id, ac.name, ac.active
 	FROM wf_access_contexts ac
 	JOIN wf_ac_group_hierarchy agh ON agh.ac_id = ac.id
-	WHERE agh.group_id = ?
+	WHERE agh.group_id = $1
 	ORDER BY agh.ac_id
-	LIMIT ? OFFSET ?
+	LIMIT $2 OFFSET $3
 	`
 	rows, err := db.Query(q, gid, limit, offset)
 	if err != nil {
@@ -242,11 +240,11 @@ func (_AccessContexts) ListByUser(uid UserID, offset, limit int64) ([]*AccessCon
 		SELECT gm.id
 		FROM wf_groups_master gm
 		JOIN wf_group_users gu ON gu.group_id = gm.id
-		WHERE gu.user_id = ?
+		WHERE gu.user_id = $1
 		AND gm.group_type = 'S'
 	)
 	ORDER BY agh.ac_id
-	LIMIT ? OFFSET ?
+	LIMIT $2 OFFSET $3
 	`
 	rows, err := db.Query(q, uid, limit, offset)
 	if err != nil {
@@ -276,7 +274,7 @@ func (_AccessContexts) Get(id AccessContextID) (*AccessContext, error) {
 	q := `
 	SELECT id, name, active
 	FROM wf_access_contexts
-	WHERE id = ?
+	WHERE id = $1
 	`
 	res := db.QueryRow(q, id)
 	var elem AccessContext
@@ -310,8 +308,8 @@ func (_AccessContexts) Rename(otx *sql.Tx, id AccessContextID, name string) erro
 
 	q := `
 	UPDATE wf_access_contexts
-	SET name = ?
-	WHERE id = ?
+	SET name = $1
+	WHERE id = $2
 	`
 	_, err = tx.Exec(q, name, id)
 	if err != nil {
@@ -350,8 +348,8 @@ func (_AccessContexts) SetActive(otx *sql.Tx, id AccessContextID, active bool) e
 
 	q := `
 	UPDATE wf_access_contexts
-	SET active = ?
-	WHERE id = ?
+	SET active = $1
+	WHERE id = $2
 	`
 	_, err = tx.Exec(q, act, id)
 	if err != nil {
@@ -397,11 +395,21 @@ func (_AccessContexts) GroupRoles(id AccessContextID, gids []GroupID, offset, li
 	FROM wf_ac_group_roles agrs
 	JOIN wf_groups_master gm ON gm.id = agrs.group_id
 	JOIN wf_roles_master rm ON rm.id = agrs.role_id
-	WHERE agrs.ac_id = ?
-	AND agrs.group_id IN (?` + strings.Repeat(",?", len(gids)-1) + `)
+	WHERE agrs.ac_id = $1
+	AND agrs.group_id IN ($2`
+
+	n := 3
+	qq := ""
+	for i := 0; i < len(gids)-1; i++ {
+		qq = qq + fmt.Sprintf(" ,$%d", n)
+		n++
+	}
+	qq = qq + fmt.Sprintf(`)
 	ORDER BY agrs.group_id
-	LIMIT ? OFFSET ?
-	`
+	LIMIT $%d OFFSET $%d 
+	`, n, n+1)
+	q = q + qq
+
 	stmt, err := db.Prepare(q)
 	if err != nil {
 		return nil, err
@@ -459,7 +467,7 @@ func (_AccessContexts) AddGroupRole(otx *sql.Tx, id AccessContextID, gid GroupID
 		tx = otx
 	}
 
-	_, err = tx.Exec(`INSERT INTO wf_ac_group_roles(ac_id, group_id, role_id) VALUES(?, ?, ?)`, id, gid, rid)
+	_, err = tx.Exec(`INSERT INTO wf_ac_group_roles(ac_id, group_id, role_id) VALUES($1, $2, $3)`, id, gid, rid)
 	if err != nil {
 		return err
 	}
@@ -492,7 +500,7 @@ func (_AccessContexts) RemoveGroupRole(otx *sql.Tx, id AccessContextID, gid Grou
 		tx = otx
 	}
 
-	_, err = tx.Exec(`DELETE FROM wf_ac_group_roles WHERE ac_id = ? AND group_id = ? AND role_id = ?`, id, gid, rid)
+	_, err = tx.Exec(`DELETE FROM wf_ac_group_roles WHERE ac_id = $1 AND group_id = $2 AND role_id = $3`, id, gid, rid)
 	if err != nil {
 		return err
 	}
@@ -521,9 +529,9 @@ func (_AccessContexts) Groups(id AccessContextID, offset, limit int64) (map[Grou
 	FROM wf_groups_master gm
 	JOIN wf_ac_group_hierarchy auh ON auh.group_id = gm.id
 	JOIN wf_groups_master rep_to ON rep_to.id = auh.reports_to
-	WHERE auh.ac_id = ?
+	WHERE auh.ac_id = $1
 	ORDER BY auh.group_id
-	LIMIT ? OFFSET ?
+	LIMIT $2 OFFSET $3
 	`
 	rows, err := db.Query(q, id, limit, offset)
 	if err != nil {
@@ -568,7 +576,7 @@ func (_AccessContexts) AddGroup(otx *sql.Tx, id AccessContextID, gid, reportsTo 
 		tx = otx
 	}
 
-	q := `INSERT INTO wf_ac_group_hierarchy(ac_id, group_id, reports_to) VALUES (?, ?, ?)`
+	q := `INSERT INTO wf_ac_group_hierarchy(ac_id, group_id, reports_to) VALUES ($1, $2, $3)`
 	_, err = tx.Exec(q, id, gid, reportsTo)
 	if err != nil {
 		return err
@@ -602,7 +610,7 @@ func (_AccessContexts) DeleteGroup(otx *sql.Tx, id AccessContextID, gid GroupID)
 		tx = otx
 	}
 
-	q := `DELETE FROM wf_ac_group_hierarchy WHERE ac_id = ? AND group_id = ?`
+	q := `DELETE FROM wf_ac_group_hierarchy WHERE ac_id = $1 AND group_id = $2`
 	_, err = tx.Exec(q, id, gid)
 	if err != nil {
 		return err
@@ -624,8 +632,8 @@ func (_AccessContexts) GroupReportsTo(id AccessContextID, uid GroupID) (GroupID,
 	q := `
 	SELECT reports_to
 	FROM wf_ac_group_hierarchy
-	WHERE ac_id = ?
-	AND group_id = ?
+	WHERE ac_id = $1
+	AND group_id = $2
 	`
 	row := db.QueryRow(q, id, uid)
 	var repID int64
@@ -643,8 +651,8 @@ func (_AccessContexts) GroupReportees(id AccessContextID, uid GroupID) ([]GroupI
 	q := `
 	SELECT group_id
 	FROM wf_ac_group_hierarchy
-	WHERE ac_id = ?
-	AND reports_to = ?
+	WHERE ac_id = $1
+	AND reports_to = $2
 	`
 	rows, err := db.Query(q, id, uid)
 	if err != nil {
@@ -689,9 +697,9 @@ func (_AccessContexts) ChangeReporting(otx *sql.Tx, id AccessContextID, gid, rep
 
 	q := `
 	UPDATE wf_ac_group_hierarchy
-	SET reports_to = ?
-	WHERE ac_id = ?
-	AND group_id = ?
+	SET reports_to = $1
+	WHERE ac_id = $2
+	AND group_id = $3
 	`
 	_, err = tx.Exec(q, reportsTo, id, gid)
 	if err != nil {
@@ -718,8 +726,8 @@ func (_AccessContexts) IncludesGroup(id AccessContextID, gid GroupID) (bool, err
 	q := `
 	SELECT reports_to
 	FROM wf_ac_group_hierarchy
-	WHERE ac_id = ?
-	AND group_id = ?
+	WHERE ac_id = $1
+	AND group_id = $2
 	`
 	var repTo int64
 	row := db.QueryRow(q, id, gid)
@@ -744,12 +752,12 @@ func (_AccessContexts) IncludesUser(id AccessContextID, uid UserID) (bool, error
 	q := `
 	SELECT COUNT(agh.reports_to)
 	FROM wf_ac_group_hierarchy agh
-	WHERE agh.ac_id = ?
+	WHERE agh.ac_id = $1
 	AND agh.group_id IN (
 		SELECT gm.id
 		FROM wf_groups_master gm
 		JOIN wf_group_users gu ON gu.group_id = gm.id
-		WHERE gu.user_id = ?
+		WHERE gu.user_id = $2
 	)
 	`
 	var count int64
@@ -777,8 +785,8 @@ func (_AccessContexts) UserPermissions(id AccessContextID, uid UserID) (map[DocT
 	SELECT acpv.doctype_id, acpv.docaction_id, dam.name, dam.reconfirm
 	FROM wf_ac_perms_v acpv
 	JOIN wf_docactions_master dam ON dam.id = acpv.docaction_id
-	WHERE acpv.ac_id = ?
-	AND acpv.user_id = ?
+	WHERE acpv.ac_id = $1
+	AND acpv.user_id = $2
 	`
 	rows, err := db.Query(q, id, uid)
 	if err != nil {
@@ -821,9 +829,9 @@ func (_AccessContexts) UserPermissionsByDocType(id AccessContextID, dtype DocTyp
 	SELECT acpv.docaction_id, dam.name, dam.reconfirm
 	FROM wf_ac_perms_v acpv
 	JOIN wf_docactions_master dam ON dam.id = acpv.docaction_id
-	WHERE acpv.ac_id = ?
-	AND acpv.doctype_id = ?
-	AND acpv.user_id = ?
+	WHERE acpv.ac_id = $1
+	AND acpv.doctype_id = $2
+	AND acpv.user_id = $3
 	`
 	rows, err := db.Query(q, id, dtype, uid)
 	if err != nil {
@@ -859,8 +867,8 @@ func (_AccessContexts) GroupPermissions(id AccessContextID, gid GroupID) (map[Do
 	SELECT acpv.doctype_id, acpv.docaction_id, dam.name, dam.reconfirm
 	FROM wf_ac_perms_v acpv
 	JOIN wf_docactions_master dam ON dam.id = acpv.docaction_id
-	WHERE acpv.ac_id = ?
-	AND acpv.group_id = ?
+	WHERE acpv.ac_id = $1
+	AND acpv.group_id = $2
 	`
 	rows, err := db.Query(q, id, gid)
 	if err != nil {
@@ -903,9 +911,9 @@ func (_AccessContexts) GroupPermissionsByDocType(id AccessContextID, dtype DocTy
 	SELECT acpv.docaction_id, dam.name, dam.reconfirm
 	FROM wf_ac_perms_v acpv
 	JOIN wf_docactions_master dam ON dam.id = acpv.docaction_id
-	WHERE acpv.ac_id = ?
-	AND acpv.doctype_id = ?
-	AND acpv.group_id = ?
+	WHERE acpv.ac_id = $1
+	AND acpv.doctype_id = $2
+	AND acpv.group_id = $3
 	`
 	rows, err := db.Query(q, id, dtype, gid)
 	if err != nil {
@@ -940,10 +948,10 @@ func (_AccessContexts) UserHasPermission(id AccessContextID, uid UserID, dtype D
 
 	q := `
 	SELECT role_id FROM wf_ac_perms_v
-	WHERE ac_id = ?
-	AND user_id = ?
-	AND doctype_id = ?
-	AND docaction_id = ?
+	WHERE ac_id = $1
+	AND user_id = $2
+	AND doctype_id = $3
+	AND docaction_id = $4
 	LIMIT 1
 	`
 	row := db.QueryRow(q, id, uid, dtype, action)
@@ -968,10 +976,10 @@ func (ac *AccessContext) GroupHasPermission(id AccessContextID, gid GroupID, dty
 
 	q := `
 	SELECT role_id FROM wf_ac_perms_v
-	WHERE ac_id = ?
-	AND group_id = ?
-	AND doctype_id = ?
-	AND docaction_id = ?
+	WHERE ac_id = $1
+	AND group_id = $2
+	AND doctype_id = $3
+	AND docaction_id = $4
 	LIMIT 1
 	`
 	row := db.QueryRow(q, id, gid, dtype, action)

@@ -55,7 +55,7 @@ func (_Mailboxes) CountByUser(uid UserID, unread bool) (int64, error) {
 		SELECT gm.id
 		FROM wf_groups_master gm
 		JOIN wf_group_users gu ON gu.group_id = gm.id
-		WHERE gu.user_id = ?
+		WHERE gu.user_id = $1
 		AND gm.group_type = 'S'
 	)
 	`
@@ -84,7 +84,7 @@ func (_Mailboxes) CountByGroup(gid GroupID, unread bool) (int64, error) {
 	q := `
 	SELECT COUNT(id)
 	FROM wf_mailboxes
-	WHERE group_id = ?
+	WHERE group_id = $1
 	`
 	if unread {
 		q += `AND unread = 1`
@@ -126,7 +126,7 @@ func (_Mailboxes) ListByUser(uid UserID, offset, limit int64, unread bool) ([]*N
 		SELECT gm.id
 		FROM wf_groups_master gm
 		JOIN wf_group_users gu ON gu.group_id = gm.id
-		WHERE gu.user_id = ?
+		WHERE gu.user_id = $1
 		AND gm.group_type = 'S'
 	)
 	`
@@ -135,7 +135,7 @@ func (_Mailboxes) ListByUser(uid UserID, offset, limit int64, unread bool) ([]*N
 	}
 	q += `
 	ORDER BY msgs.id
-	LIMIT ? OFFSET ?
+	LIMIT $2 OFFSET $3
 	`
 
 	rows, err := db.Query(q, uid, limit, offset)
@@ -184,14 +184,14 @@ func (_Mailboxes) ListByGroup(gid GroupID, offset, limit int64, unread bool) ([]
 	FROM wf_messages msgs
 	JOIN wf_mailboxes mbs ON mbs.message_id = msgs.id
 	JOIN wf_doctypes_master dtm ON dtm.id = msgs.doctype_id
-	WHERE mbs.group_id = ?
+	WHERE mbs.group_id = $1
 	`
 	if unread {
 		q += `AND mbs.unread = 1`
 	}
 	q += `
 	ORDER BY msgs.id
-	LIMIT ? OFFSET ?
+	LIMIT $2 OFFSET $3
 	`
 
 	rows, err := db.Query(q, gid, limit, offset)
@@ -230,7 +230,7 @@ func (_Mailboxes) GetMessage(msgID MessageID) (*Notification, error) {
 	FROM wf_messages msgs
 	JOIN wf_mailboxes mbs ON mbs.message_id = msgs.id
 	JOIN wf_doctypes_master dtm ON dtm.id = msgs.doctype_id
-	WHERE mbs.id = ?
+	WHERE mbs.id = $1
 	`
 	row := db.QueryRow(q, msgID)
 	var elem Notification
@@ -268,9 +268,9 @@ func (_Mailboxes) ReassignMessage(otx *sql.Tx, fgid, tgid GroupID, msgID Message
 	}
 
 	q := `
-	UPDATE wf_mailboxes SET group_id = ?, unread = 1
-	WHERE group_id = ?
-	AND message_id = ?
+	UPDATE wf_mailboxes SET group_id = $1, unread = 1
+	WHERE group_id = $2
+	AND message_id = $3
 	`
 	_, err = tx.Exec(q, tgid, fgid, msgID)
 	if err != nil {
@@ -307,15 +307,15 @@ func (_Mailboxes) SetStatusByUser(otx *sql.Tx, uid UserID, msgID MessageID, stat
 	}
 
 	q := `
-	UPDATE wf_mailboxes SET unread = ?
+	UPDATE wf_mailboxes SET unread = $1
 	WHERE group_id = (
 		SELECT gm.id
 		FROM wf_groups_master gm
 		JOIN wf_group_users gu ON gu.group_id = gm.id
-		WHERE gu.user_id = ?
+		WHERE gu.user_id = $2
 		AND gm.group_type = 'S'
 	)
-	AND message_id = ?
+	AND message_id = $3
 	`
 	_, err = tx.Exec(q, status, uid, msgID)
 	if err != nil {
@@ -352,9 +352,9 @@ func (_Mailboxes) SetStatusByGroup(otx *sql.Tx, gid GroupID, msgID MessageID, st
 	}
 
 	q := `
-	UPDATE wf_mailboxes SET unread = ?
-	WHERE group_id = ?
-	AND message_id = ?
+	UPDATE wf_mailboxes SET unread = $1
+	WHERE group_id = $2
+	AND message_id = $3
 	`
 	_, err = tx.Exec(q, status, gid, msgID)
 	if err != nil {

@@ -202,7 +202,7 @@ func (n *Node) recordEvent(otx *sql.Tx, event *DocEvent, tstate DocStateID, stat
 	if !statusOnly {
 		q := `
 		INSERT INTO wf_docevent_application(doctype_id, doc_id, from_state_id, docevent_id, to_state_id)
-		VALUES(?, ?, ?, ?, ?)
+		VALUES($1, $2, $3, $4, $5)
 		`
 		_, err := otx.Exec(q, event.DocType, event.DocID, event.State, event.ID, tstate)
 		if err != nil {
@@ -210,7 +210,7 @@ func (n *Node) recordEvent(otx *sql.Tx, event *DocEvent, tstate DocStateID, stat
 		}
 	}
 
-	q := `UPDATE wf_docevents SET status = 'A' WHERE id = ?`
+	q := `UPDATE wf_docevents SET status = 'A' WHERE id = $1`
 	_, err := otx.Exec(q, event.ID)
 	if err != nil {
 		return err
@@ -228,8 +228,8 @@ func (n *Node) determineRecipients(otx *sql.Tx, recv map[GroupID]struct{}, doc *
 	q := `
 	SELECT reports_to
 	FROM wf_ac_group_hierarchy
-	WHERE ac_id = ?
-	AND group_id = ?
+	WHERE ac_id = $1
+	AND group_id = $2
 	ORDER BY group_id
 	LIMIT 1
 	`
@@ -255,8 +255,8 @@ func (n *Node) determineRecipients(otx *sql.Tx, recv map[GroupID]struct{}, doc *
 	q2 := `
 	SELECT DISTINCT (group_id)
 	FROM wf_docevents
-	WHERE doctype_id = ?
-	AND doc_id = ?
+	WHERE doctype_id = $1
+	AND doc_id = $2
 	`
 	rows2, err := otx.Query(q2, doc.DocType.ID, doc.ID)
 	if err != nil {
@@ -286,14 +286,12 @@ func (n *Node) postMessage(otx *sql.Tx, msg *Message, recv map[GroupID]struct{})
 
 	q := `
 	INSERT INTO wf_messages(doctype_id, doc_id, docevent_id, title, data)
-	VALUES(?, ?, ?, ?, ?)
+	VALUES($1, $2, $3, $4, $5) RETURNING id
 	`
-	res, err := otx.Exec(q, msg.DocType.ID, msg.DocID, msg.Event, msg.Title, msg.Data)
-	if err != nil {
-		return err
-	}
+
 	var msgid int64
-	if msgid, err = res.LastInsertId(); err != nil {
+	err := otx.QueryRow(q, msg.DocType.ID, msg.DocID, msg.Event, msg.Title, msg.Data).Scan(&msgid)
+	if err != nil {
 		return err
 	}
 
@@ -301,10 +299,10 @@ func (n *Node) postMessage(otx *sql.Tx, msg *Message, recv map[GroupID]struct{})
 
 	q = `
 	INSERT INTO wf_mailboxes(group_id, message_id, unread, ctime)
-	VALUES(?, ?, 1, NOW())
+	VALUES($1, $2, 1, NOW())
 	`
 	for gid := range recv {
-		res, err = otx.Exec(q, gid, msgid)
+		_, err = otx.Exec(q, gid, msgid)
 		if err != nil {
 			return err
 		}
@@ -325,7 +323,7 @@ func (_Nodes) List(id WorkflowID) ([]*Node, error) {
 	q := `
 	SELECT id, doctype_id, docstate_id, workflow_id, name, type
 	FROM wf_workflow_nodes
-	WHERE workflow_id = ?
+	WHERE workflow_id = $1
 	`
 	rows, err := db.Query(q, id)
 	if err != nil {
@@ -361,7 +359,7 @@ func (_Nodes) Get(id NodeID) (*Node, error) {
 	q := `
 	SELECT id, doctype_id, docstate_id, ac_id, workflow_id, name, type
 	FROM wf_workflow_nodes
-	WHERE id = ?
+	WHERE id = $1
 	`
 	row := db.QueryRow(q, id)
 	err := row.Scan(&elem.ID, &elem.DocType, &elem.State, &acID, &elem.Wflow, &elem.Name, &elem.NodeType)
@@ -384,8 +382,8 @@ func (_Nodes) GetByState(dtype DocTypeID, state DocStateID) (*Node, error) {
 	q := `
 	SELECT id, doctype_id, docstate_id, ac_id, workflow_id, name, type
 	FROM wf_workflow_nodes
-	WHERE doctype_id = ?
-	AND docstate_id = ?
+	WHERE doctype_id = $1
+	AND docstate_id = $2
 	`
 	row := db.QueryRow(q, dtype, state)
 	err := row.Scan(&elem.ID, &elem.DocType, &elem.State, &acID, &elem.Wflow, &elem.Name, &elem.NodeType)

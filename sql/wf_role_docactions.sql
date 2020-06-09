@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS wf_role_docactions;
 --
 
 CREATE TABLE wf_role_docactions (
-    id INT NOT NULL AUTO_INCREMENT,
+    id SERIAL,
     role_id INT NOT NULL,
     doctype_id INT NOT NULL,
     docaction_id INT NOT NULL,

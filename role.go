@@ -58,11 +58,8 @@ func (_Roles) New(otx *sql.Tx, name string) (RoleID, error) {
 		tx = otx
 	}
 
-	res, err := tx.Exec("INSERT INTO wf_roles_master(name) VALUES(?)", name)
-	if err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
+	var id int64
+	err = tx.QueryRow("INSERT INTO wf_roles_master(name) VALUES($1) RETURNING id", name).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -95,7 +92,7 @@ func (_Roles) List(offset, limit int64) ([]*Role, error) {
 	SELECT id, name
 	FROM wf_roles_master
 	ORDER BY id
-	LIMIT ? OFFSET ?
+	LIMIT $1 OFFSET $2
 	`
 	rows, err := db.Query(q, limit, offset)
 	if err != nil {
@@ -127,7 +124,7 @@ func (_Roles) Get(id RoleID) (*Role, error) {
 	}
 
 	var elem Role
-	row := db.QueryRow("SELECT id, name FROM wf_roles_master WHERE id = ?", id)
+	row := db.QueryRow("SELECT id, name FROM wf_roles_master WHERE id = $1", id)
 	err := row.Scan(&elem.ID, &elem.Name)
 	if err != nil {
 		return nil, err
@@ -145,7 +142,7 @@ func (_Roles) GetByName(name string) (*Role, error) {
 	}
 
 	var elem Role
-	row := db.QueryRow("SELECT id, name FROM wf_roles_master WHERE name = ?", name)
+	row := db.QueryRow("SELECT id, name FROM wf_roles_master WHERE name = $1", name)
 	err := row.Scan(&elem.ID, &elem.Name)
 	if err != nil {
 		return nil, err
@@ -173,7 +170,7 @@ func (_Roles) Rename(otx *sql.Tx, id RoleID, name string) error {
 		tx = otx
 	}
 
-	_, err = tx.Exec("UPDATE wf_roles_master SET name = ? WHERE id = ?", name, id)
+	_, err = tx.Exec("UPDATE wf_roles_master SET name = $1 WHERE id = $2", name, id)
 	if err != nil {
 		return err
 	}
@@ -195,7 +192,7 @@ func (_Roles) Delete(otx *sql.Tx, id RoleID) error {
 		return errors.New("role ID must be a positive integer")
 	}
 
-	row := db.QueryRow("SELECT COUNT(*) FROM wf_ac_group_roles WHERE role_id = ?", id)
+	row := db.QueryRow("SELECT COUNT(*) FROM wf_ac_group_roles WHERE role_id = $1", id)
 	var n int64
 	err := row.Scan(&n)
 	if n > 0 {
@@ -213,11 +210,11 @@ func (_Roles) Delete(otx *sql.Tx, id RoleID) error {
 		tx = otx
 	}
 
-	_, err = tx.Exec("DELETE FROM wf_role_docactions WHERE role_id = ?", id)
+	_, err = tx.Exec("DELETE FROM wf_role_docactions WHERE role_id = $1", id)
 	if err != nil {
 		return err
 	}
-	res, err := tx.Exec("DELETE FROM wf_roles_master WHERE id = ?", id)
+	res, err := tx.Exec("DELETE FROM wf_roles_master WHERE id = $1", id)
 	if err != nil {
 		return err
 	}
@@ -253,7 +250,7 @@ func (_Roles) AddPermissions(otx *sql.Tx, rid RoleID, dtype DocTypeID, actions [
 
 	q := `
 	INSERT INTO wf_role_docactions(role_id, doctype_id, docaction_id)
-	VALUES(?, ?, ?)
+	VALUES($1, $2, $3)
 	`
 	for _, action := range actions {
 		_, err = tx.Exec(q, rid, dtype, action)
@@ -288,9 +285,9 @@ func (_Roles) RemovePermissions(otx *sql.Tx, rid RoleID, dtype DocTypeID, action
 
 	q := `
 	DELETE FROM wf_role_docactions
-	WHERE role_id = ?
-	AND doctype_id = ?
-	AND docaction_id = ?
+	WHERE role_id = $1
+	AND doctype_id = $2
+	AND docaction_id = $3
 	`
 	for _, action := range actions {
 		_, err = tx.Exec(q, rid, dtype, action)
@@ -320,7 +317,7 @@ func (_Roles) Permissions(rid RoleID) (map[string]struct {
 	FROM wf_doctypes_master dtm
 	JOIN wf_role_docactions rdas ON dtm.id = rdas.doctype_id
 	JOIN wf_docactions_master dam ON dam.id = rdas.docaction_id
-	WHERE rdas.role_id = ?
+	WHERE rdas.role_id = $1
 	`
 	rows, err := db.Query(q, rid)
 	if err != nil {
@@ -361,9 +358,9 @@ func (_Roles) HasPermission(rid RoleID, dtype DocTypeID, action DocActionID) (bo
 	SELECT rdas.id FROM wf_role_docactions rdas
 	JOIN wf_doctypes_master dtm ON rdas.doctype_id = dtm.id
 	JOIN wf_docactions_master dam ON rdas.docaction_id = dam.id
-	WHERE rdas.role_id = ?
-	AND dtm.id = ?
-	AND dam.id = ?
+	WHERE rdas.role_id = $1
+	AND dtm.id = $2
+	AND dam.id = $3
 	ORDER BY rdas.id
 	LIMIT 1
 	`

@@ -16,8 +16,9 @@
 package flow
 
 import (
-	"database/sql"
 	"log"
+
+	"github.com/jmoiron/sqlx"
 )
 
 const (
@@ -26,7 +27,7 @@ const (
 	DefACRoleCount = 1
 )
 
-var db *sql.DB
+var db *sqlx.DB
 var blobsDir string
 
 //
@@ -39,7 +40,7 @@ func init() {
 // RegisterDB provides an already initialised database handle to `flow`.
 //
 // N.B. This method **MUST** be called before anything else in `flow`.
-func RegisterDB(sdb *sql.DB) error {
+func RegisterDB(sdb *sqlx.DB) error {
 	if sdb == nil {
 		log.Fatal("given database handle is `nil`")
 	}

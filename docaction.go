@@ -73,17 +73,12 @@ func (_DocActions) New(otx *sql.Tx, name string, reconfirm bool) (DocActionID, e
 		tx = otx
 	}
 
-	var res sql.Result
-	if reconfirm {
-		res, err = tx.Exec("INSERT INTO wf_docactions_master(name, reconfirm) VALUES(?, ?)", name, 1)
-	} else {
-		res, err = tx.Exec("INSERT INTO wf_docactions_master(name, reconfirm) VALUES(?, ?)", name, 0)
-	}
-	if err != nil {
-		return 0, err
-	}
 	var aid int64
-	aid, err = res.LastInsertId()
+	if reconfirm {
+		err = tx.QueryRow("INSERT INTO wf_docactions_master(name, reconfirm) VALUES($1, $2) RETURNING id", name, 1).Scan(&aid)
+	} else {
+		err = tx.QueryRow("INSERT INTO wf_docactions_master(name, reconfirm) VALUES($1, $2) RETURNING id", name, 0).Scan(&aid)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -116,7 +111,7 @@ func (_DocActions) List(offset, limit int64) ([]*DocAction, error) {
 	SELECT id, name, reconfirm
 	FROM wf_docactions_master
 	ORDER BY id
-	LIMIT ? OFFSET ?
+	LIMIT $1 OFFSET $2
 	`
 	rows, err := db.Query(q, limit, offset)
 	if err != nil {
@@ -147,7 +142,7 @@ func (_DocActions) Get(id DocActionID) (*DocAction, error) {
 	}
 
 	var elem DocAction
-	row := db.QueryRow("SELECT id, name, reconfirm FROM wf_docactions_master WHERE id = ?", id)
+	row := db.QueryRow("SELECT id, name, reconfirm FROM wf_docactions_master WHERE id = $1", id)
 	err := row.Scan(&elem.ID, &elem.Name, &elem.Reconfirm)
 	if err != nil {
 		return nil, err
@@ -165,7 +160,7 @@ func (_DocActions) GetByName(name string) (*DocAction, error) {
 	}
 
 	var elem DocAction
-	row := db.QueryRow("SELECT id, name, reconfirm FROM wf_docactions_master WHERE name = ?", name)
+	row := db.QueryRow("SELECT id, name, reconfirm FROM wf_docactions_master WHERE name = $1", name)
 	err := row.Scan(&elem.ID, &elem.Name, &elem.Reconfirm)
 	if err != nil {
 		return nil, err
@@ -193,7 +188,7 @@ func (_DocActions) Rename(otx *sql.Tx, id DocActionID, name string) error {
 		tx = otx
 	}
 
-	_, err = tx.Exec("UPDATE wf_docactions_master SET name = ? WHERE id = ?", name, id)
+	_, err = tx.Exec("UPDATE wf_docactions_master SET name = $1 WHERE id = $2", name, id)
 	if err != nil {
 		return err
 	}

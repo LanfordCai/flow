@@ -19,7 +19,8 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq"
 )
 
 // error0 expects only an error value as its argument.
@@ -79,8 +80,8 @@ func TestFlowInit(t *testing.T) {
 	gt = t
 
 	// Connect to the database.
-	driver, connStr := "mysql", "travis@/flow"
-	tdb := fatal1(sql.Open(driver, connStr)).(*sql.DB)
+	driver, connStr := "postgres", "user=postgres dbname=flow sslmode=disable"
+	tdb := fatal1(sqlx.Open(driver, connStr)).(*sqlx.DB)
 	RegisterDB(tdb)
 }
 
@@ -95,6 +96,8 @@ var wfID1, wfID2 WorkflowID
 var roleID1, roleID2 RoleID
 var uID1, uID2, uID3, uID4 UserID
 var gID1, gID2, gID3, gID4, gID5, gID6 GroupID
+
+var acID1, acID2 AccessContextID
 
 // Create operations.
 func TestFlowCreate(t *testing.T) {
@@ -150,43 +153,50 @@ func TestFlowCreate(t *testing.T) {
 		fatal0(tx.Commit())
 	})
 
+	t.Run("AccessContext", func(t *testing.T) {
+		tx := fatal1(db.Begin()).(*sql.Tx)
+		defer tx.Rollback()
+
+		acID1 = fatal1(AccessContexts.New(tx, "AccessContext1")).(AccessContextID)
+		acID2 = fatal1(AccessContexts.New(tx, "AccessContext2")).(AccessContextID)
+
+		fatal0(tx.Commit())
+	})
+
 	t.Run("Users", func(t *testing.T) {
 		tx := fatal1(db.Begin()).(*sql.Tx)
 		defer tx.Rollback()
 
-		res, err := tx.Exec(`INSERT INTO users_master(first_name, last_name, email, active)
-			VALUES('FN 1', 'LN 1', 'email1@example.com', 1)`)
+		var uid int64
+		err := tx.QueryRow(`INSERT INTO users_master(first_name, last_name, email, active)
+			VALUES('FN 1', 'LN 1', 'email1@example.com', 1) RETURNING id`).Scan(&uid)
 		if err != nil {
 			t.Fatalf("%v\n", err)
 		}
-		uid, _ := res.LastInsertId()
 		uID1 = UserID(uid)
 		gID1 = fatal1(Groups.NewSingleton(tx, uID1)).(GroupID)
 
-		res, err = tx.Exec(`INSERT INTO users_master(first_name, last_name, email, active)
-			VALUES('FN 2', 'LN 2', 'email2@example.com', 1)`)
+		err = tx.QueryRow(`INSERT INTO users_master(first_name, last_name, email, active)
+			VALUES('FN 2', 'LN 2', 'email2@example.com', 1) RETURNING id`).Scan(&uid)
 		if err != nil {
 			t.Fatalf("%v\n", err)
 		}
-		uid, _ = res.LastInsertId()
 		uID2 = UserID(uid)
 		gID2 = fatal1(Groups.NewSingleton(tx, uID2)).(GroupID)
 
-		res, err = tx.Exec(`INSERT INTO users_master(first_name, last_name, email, active)
-			VALUES('FN 3', 'LN 3', 'email3@example.com', 1)`)
+		err = tx.QueryRow(`INSERT INTO users_master(first_name, last_name, email, active)
+			VALUES('FN 3', 'LN 3', 'email3@example.com', 1) RETURNING id`).Scan(&uid)
 		if err != nil {
 			t.Errorf("%v\n", err)
 		}
-		uid, _ = res.LastInsertId()
 		uID3 = UserID(uid)
 		gID3 = fatal1(Groups.NewSingleton(tx, uID3)).(GroupID)
 
-		res, err = tx.Exec(`INSERT INTO users_master(first_name, last_name, email, active)
-			VALUES('FN 4', 'LN 4', 'email4@example.com', 1)`)
+		err = tx.QueryRow(`INSERT INTO users_master(first_name, last_name, email, active)
+			VALUES('FN 4', 'LN 4', 'email4@example.com', 1) RETURNING id`).Scan(&uid)
 		if err != nil {
 			t.Fatalf("%v\n", err)
 		}
-		uid, _ = res.LastInsertId()
 		uID4 = UserID(uid)
 		gID4 = fatal1(Groups.NewSingleton(tx, uID4)).(GroupID)
 
@@ -236,6 +246,15 @@ func TestFlowCreate(t *testing.T) {
 		fatal0(Roles.AddPermissions(tx, roleID2, dtID1, []DocActionID{daID1, daID2, daID3, daID4, daID5, daID6, daID7, daID8, daID9}))
 
 		fatal0(tx.Commit())
+	})
+
+	t.Run("AccessContextAddGroupsAndRoles", func(t *testing.T) {
+		tx := fatal1(db.Begin()).(*sql.Tx)
+		defer tx.Rollback()
+
+		fatal0(AccessContexts.AddGroup(tx, acID1, gID5, gID6))
+		fatal0(AccessContexts.AddGroupRole(tx, acID1, gID5, roleID1))
+		fatal0(AccessContexts.AddGroupRole(tx, acID1, gID6, roleID2))
 	})
 }
 
@@ -314,7 +333,7 @@ func TestFlowList(t *testing.T) {
 	})
 }
 
-// Retrieval of individual entities.
+// // Retrieval of individual entities.
 func TestFlowGet(t *testing.T) {
 	gt = t
 	var res interface{}
@@ -606,6 +625,17 @@ func TestFlowDelete(t *testing.T) {
 		// There are two pre-defined roles for administrators.
 		assertEqual(3, len(objs))
 	})
+}
+
+func TestFlowWork(t *testing.T) {
+	tx := fatal1(db.Begin()).(*sql.Tx)
+	defer tx.Rollback()
+
+	// dt, err := DocTypes.GetByName("Compute Request")
+	// if err != nil {
+	// t.Log(err)
+	// }
+	// Workflows.AddNode(tx, dt1, ds1)
 }
 
 // Tear down.

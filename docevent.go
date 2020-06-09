@@ -61,7 +61,7 @@ type DocEvent struct {
 // StatusInDB answers the status of this event.
 func (e *DocEvent) StatusInDB() (EventStatus, error) {
 	var dstatus string
-	row := db.QueryRow("SELECT status FROM wf_docevents WHERE id = ?", e.ID)
+	row := db.QueryRow("SELECT status FROM wf_docevents WHERE id = $1", e.ID)
 	err := row.Scan(&dstatus)
 	if err != nil {
 		return 0, err
@@ -138,7 +138,7 @@ func (_DocEvents) New(otx *sql.Tx, input *DocEventsNewInput) (DocEventID, error)
 
 	q := `
 	INSERT INTO wf_docevents(doctype_id, doc_id, docstate_id, docaction_id, group_id, data, ctime, status)
-	VALUES(?, ?, ?, ?, ?, ?, NOW(), 'P')
+	VALUES($1, $2, $3, $4, $5, $6, NOW(), 'P')
 	`
 	res, err := tx.Exec(q, input.DocTypeID, input.DocumentID, input.DocStateID, input.DocActionID, input.GroupID, input.Text)
 	if err != nil {
@@ -201,7 +201,7 @@ func (_DocEvents) List(input *DocEventsListInput, offset, limit int64) ([]*DocEv
 	args := []interface{}{}
 
 	if input.DocTypeID > 0 {
-		where = append(where, `de.doctype_id = ?`)
+		where = append(where, `de.doctype_id = $1`)
 		args = append(args, input.DocTypeID)
 	}
 
@@ -209,7 +209,7 @@ func (_DocEvents) List(input *DocEventsListInput, offset, limit int64) ([]*DocEv
 		tbl := DocTypes.docStorName(input.DocTypeID)
 		q += `JOIN ` + tbl + ` docs ON docs.id = de.doc_id
 		`
-		where = append(where, `docs.ac_id = ?`)
+		where = append(where, `docs.ac_id = $2`)
 		args = append(args, input.AccessContextID)
 	}
 
@@ -228,22 +228,22 @@ func (_DocEvents) List(input *DocEventsListInput, offset, limit int64) ([]*DocEv
 	}
 
 	if input.GroupID > 0 {
-		where = append(where, `de.group_id = ?`)
+		where = append(where, `de.group_id = $3`)
 		args = append(args, input.GroupID)
 	}
 
 	if input.DocStateID > 0 {
-		where = append(where, `de.docstate_id = ?`)
+		where = append(where, `de.docstate_id = $4`)
 		args = append(args, input.DocStateID)
 	}
 
 	if !input.CtimeStarting.IsZero() {
-		where = append(where, `de.ctime >= ?`)
+		where = append(where, `de.ctime >= $5`)
 		args = append(args, input.CtimeStarting)
 	}
 
 	if !input.CtimeBefore.IsZero() {
-		where = append(where, `de.ctime < ?`)
+		where = append(where, `de.ctime < $6`)
 		args = append(args, input.CtimeBefore)
 	}
 
@@ -253,7 +253,7 @@ func (_DocEvents) List(input *DocEventsListInput, offset, limit int64) ([]*DocEv
 
 	q += `
 	ORDER BY de.id
-	LIMIT ? OFFSET ?
+	LIMIT $7 OFFSET $8
 	`
 	args = append(args, limit, offset)
 	rows, err := db.Query(q, args...)
@@ -306,7 +306,7 @@ func (_DocEvents) Get(eid DocEventID) (*DocEvent, error) {
 	q := `
 	SELECT id, doctype_id, doc_id, docstate_id, docaction_id, group_id, data, ctime, status
 	FROM wf_docevents
-	WHERE id = ?
+	WHERE id = $1
 	`
 	row := db.QueryRow(q, eid)
 	err := row.Scan(&elem.ID, &elem.DocType, &elem.DocID, &elem.State, &elem.Action, &elem.Group, &text, &elem.Ctime, &dstatus)

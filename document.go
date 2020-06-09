@@ -202,7 +202,7 @@ func (_Documents) New(otx *sql.Tx, input *DocumentsNewInput) (DocumentID, error)
 		q := `
 		SELECT docstate_id
 		FROM wf_workflows
-		WHERE doctype_id = ?
+		WHERE doctype_id = $1
 		AND active = 1
 		`
 		row := db.QueryRow(q, input.DocTypeID)
@@ -230,14 +230,11 @@ func (_Documents) New(otx *sql.Tx, input *DocumentsNewInput) (DocumentID, error)
 	}
 
 	tbl := DocTypes.docStorName(input.DocTypeID)
+	var id int64
 	q2 := `INSERT INTO ` + tbl + `(path, ac_id, docstate_id, group_id, ctime, title, data)
-	VALUES (?, ?, ?, ?, NOW(), ?, ?)
+	VALUES ($1, $2, $3, $4, NOW(), $5, $6) RETURNING id
 	`
-	res, err := tx.Exec(q2, string(path), input.AccessContextID, dsid, input.GroupID, input.Title, input.Data)
-	if err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
+	err = tx.QueryRow(q2, string(path), input.AccessContextID, dsid, input.GroupID, input.Title, input.Data).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -245,9 +242,9 @@ func (_Documents) New(otx *sql.Tx, input *DocumentsNewInput) (DocumentID, error)
 	if input.ParentID > 0 {
 		q2 = `
 		INSERT INTO wf_document_children(parent_doctype_id, parent_id, child_doctype_id, child_id)
-		VALUES (?, ?, ?, ?)
+		VALUES ($1, $2, $3, $4)
 		`
-		res, err = tx.Exec(q2, input.ParentType, input.ParentID, input.DocTypeID, id)
+		_, err = tx.Exec(q2, input.ParentType, input.ParentID, input.DocTypeID, id)
 		if err != nil {
 			return 0, err
 		}
@@ -304,31 +301,31 @@ func (_Documents) List(input *DocumentsListInput, offset, limit int64) ([]*Docum
 
 	where := []string{}
 	args := []interface{}{input.AccessContextID}
-	q += `WHERE docs.ac_id = ?
+	q += `WHERE docs.ac_id = $1
 	`
 
 	if input.GroupID > 0 {
-		where = append(where, `docs.group_id = ?`)
+		where = append(where, `docs.group_id = $2`)
 		args = append(args, input.GroupID)
 	}
 
 	if input.DocStateID > 0 {
-		where = append(where, `docs.docstate_id = ?`)
+		where = append(where, `docs.docstate_id = $3`)
 		args = append(args, input.DocStateID)
 	}
 
 	if !input.CtimeStarting.IsZero() {
-		where = append(where, `docs.ctime >= ?`)
+		where = append(where, `docs.ctime >= $4`)
 		args = append(args, input.CtimeStarting)
 	}
 
 	if !input.CtimeBefore.IsZero() {
-		where = append(where, `docs.ctime < ?`)
+		where = append(where, `docs.ctime < $5`)
 		args = append(args, input.CtimeBefore)
 	}
 
 	if input.TitleContains != "" {
-		where = append(where, `docs.title LIKE ?`)
+		where = append(where, `docs.title LIKE $6`)
 		args = append(args, "%"+input.TitleContains+"%")
 	}
 
@@ -342,7 +339,7 @@ func (_Documents) List(input *DocumentsListInput, offset, limit int64) ([]*Docum
 
 	q += `
 	ORDER BY docs.id
-	LIMIT ? OFFSET ?
+	LIMIT $7 OFFSET $8
 	`
 	args = append(args, limit, offset)
 
@@ -364,7 +361,7 @@ func (_Documents) List(input *DocumentsListInput, offset, limit int64) ([]*Docum
 		}
 
 		elem.DocType.ID = input.DocTypeID
-		q2 := `SELECT name FROM wf_doctypes_master WHERE id = ?`
+		q2 := `SELECT name FROM wf_doctypes_master WHERE id = $1`
 		row2 := db.QueryRow(q2, input.DocTypeID)
 		err = row2.Scan(&elem.DocType.Name)
 		if err != nil {
@@ -396,7 +393,7 @@ func (_Documents) Get(otx *sql.Tx, dtype DocTypeID, id DocumentID) (*Document, e
 	FROM ` + tbl + ` AS docs
 	JOIN wf_groups_master gm ON gm.id = docs.group_id
 	JOIN wf_docstates_master dsm ON docs.docstate_id = dsm.id
-	WHERE docs.id = ?
+	WHERE docs.id = $1
 	`
 
 	var row *sql.Row
@@ -409,7 +406,7 @@ func (_Documents) Get(otx *sql.Tx, dtype DocTypeID, id DocumentID) (*Document, e
 	if err != nil {
 		return nil, err
 	}
-	q = `SELECT name FROM wf_doctypes_master WHERE id = ?`
+	q = `SELECT name FROM wf_doctypes_master WHERE id = $1`
 	row = db.QueryRow(q, dtype)
 	err = row.Scan(&elem.DocType.Name)
 	if err != nil {
@@ -426,8 +423,8 @@ func (_Documents) GetParent(otx *sql.Tx, dtype DocTypeID, id DocumentID) (*Docum
 	q := `
 	SELECT parent_doctype_id, parent_id
 	FROM wf_document_children
-	WHERE child_doctype_id = ?
-	AND child_id = ?
+	WHERE child_doctype_id = $1
+	AND child_id = $2
 	LIMIT 1
 	`
 	var row *sql.Row
@@ -458,10 +455,10 @@ func (_Documents) setState(otx *sql.Tx, dtype DocTypeID, id DocumentID, state Do
 	var q string
 	var err error
 	if ac > 0 {
-		q = `UPDATE ` + tbl + ` SET docstate_id = ?, ac_id = ? WHERE id = ?`
+		q = `UPDATE ` + tbl + ` SET docstate_id = $1, ac_id = $2 WHERE id = $3`
 		_, err = otx.Exec(q, state, ac, id)
 	} else {
-		q = `UPDATE ` + tbl + ` SET docstate_id = ? WHERE id = ?`
+		q = `UPDATE ` + tbl + ` SET docstate_id = $1 WHERE id = $2`
 		_, err = otx.Exec(q, state, id)
 	}
 	return err
@@ -478,7 +475,7 @@ func (_Documents) SetTitle(otx *sql.Tx, dtype DocTypeID, id DocumentID, title st
 	tbl := DocTypes.docStorName(dtype)
 	var path DocPath
 	var dgroup GroupID
-	q := `SELECT path, group_id FROM ` + tbl + ` WHERE id = ?`
+	q := `SELECT path, group_id FROM ` + tbl + ` WHERE id = $1`
 	row := db.QueryRow(q, id)
 	err := row.Scan(&path, &dgroup)
 	if err != nil {
@@ -499,7 +496,7 @@ func (_Documents) SetTitle(otx *sql.Tx, dtype DocTypeID, id DocumentID, title st
 		tx = otx
 	}
 
-	q = `UPDATE ` + tbl + ` SET title = ?, ctime = NOW() WHERE id = ?`
+	q = `UPDATE ` + tbl + ` SET title = $1, ctime = NOW() WHERE id = $2`
 	_, err = tx.Exec(q, title, id)
 	if err != nil {
 		return err
@@ -534,7 +531,7 @@ func (_Documents) SetData(otx *sql.Tx, dtype DocTypeID, id DocumentID, data stri
 		tx = otx
 	}
 
-	q := `UPDATE ` + tbl + ` SET data = ?, ctime = NOW() WHERE id = ?`
+	q := `UPDATE ` + tbl + ` SET data = $1, ctime = NOW() WHERE id = $2`
 	_, err = tx.Exec(q, data, id)
 	if err != nil {
 		return err
@@ -556,8 +553,8 @@ func (_Documents) Blobs(dtype DocTypeID, id DocumentID) ([]*Blob, error) {
 	q := `
 	SELECT name, sha1sum
 	FROM wf_document_blobs
-	WHERE doctype_id = ?
-	AND doc_id = ?
+	WHERE doctype_id = $1
+	AND doc_id = $2
 	`
 	rows, err := db.Query(q, dtype, id)
 	if err != nil {
@@ -592,9 +589,9 @@ func (_Documents) GetBlob(dtype DocTypeID, id DocumentID, blob *Blob) error {
 	q := `
 	SELECT name, path
 	FROM wf_document_blobs
-	WHERE doctype_id = ?
-	AND doc_id = ?
-	AND sha1sum = ?
+	WHERE doctype_id = $1
+	AND doc_id = $2
+	AND sha1sum = $3
 	`
 	row := db.QueryRow(q, dtype, id, blob.SHA1Sum)
 	var b Blob
@@ -681,7 +678,7 @@ func (_Documents) AddBlob(otx *sql.Tx, dtype DocTypeID, id DocumentID, blob *Blo
 
 	q := `
 	INSERT INTO wf_document_blobs(doctype_id, doc_id, name, path, sha1sum)
-	VALUES(?, ?, ?, ?, ?)
+	VALUES($1, $2, $3, $4, $5)
 	`
 	_, err = tx.Exec(q, dtype, id, blob.Name, bpath, csum)
 	if err != nil {
@@ -720,7 +717,7 @@ func (_Documents) DeleteBlob(otx *sql.Tx, dtype DocTypeID, id DocumentID, sha1 s
 	q := `
 	SELECT COUNT(*)
 	FROM wf_document_blobs
-	WHERE sha1sum = ?
+	WHERE sha1sum = $1
 	`
 	var count int64
 	row := tx.QueryRow(q, sha1)
@@ -732,9 +729,9 @@ func (_Documents) DeleteBlob(otx *sql.Tx, dtype DocTypeID, id DocumentID, sha1 s
 		q = `
 		SELECT path
 		FROM wf_document_blobs
-		WHERE doctype_id = ?
-		AND doc_id = ?
-		AND sha1sum = ?
+		WHERE doctype_id = $1
+		AND doc_id = $2
+		AND sha1sum = $3
 		`
 		var path string
 		row = tx.QueryRow(q, dtype, id, sha1)
@@ -751,9 +748,9 @@ func (_Documents) DeleteBlob(otx *sql.Tx, dtype DocTypeID, id DocumentID, sha1 s
 
 	q = `
 	DELETE FROM wf_document_blobs
-	WHERE doctype_id = ?
-	AND doc_id = ?
-	AND sha1sum = ?
+	WHERE doctype_id = $1
+	AND doc_id = $2
+	AND sha1sum = $3
 	`
 	_, err = tx.Exec(q, dtype, id, sha1)
 	if err != nil {
@@ -776,8 +773,8 @@ func (_Documents) Tags(dtype DocTypeID, id DocumentID) ([]string, error) {
 	q := `
 	SELECT tag
 	FROM wf_document_tags
-	WHERE doctype_id = ?
-	AND doc_id = ?
+	WHERE doctype_id = $1
+	AND doc_id = $2
 	`
 	rows, err := db.Query(q, dtype, id)
 	if err != nil {
@@ -811,8 +808,8 @@ func (_Documents) AddTags(otx *sql.Tx, dtype DocTypeID, id DocumentID, tags ...s
 	q := `
 	SELECT parent_id
 	FROM wf_document_children
-	WHERE child_doctype_id = ?
-	AND child_id = ?
+	WHERE child_doctype_id = $1
+	AND child_id = $2
 	ORDER BY child_id
 	LIMIT 1
 	`
@@ -841,7 +838,7 @@ func (_Documents) AddTags(otx *sql.Tx, dtype DocTypeID, id DocumentID, tags ...s
 
 	q = `
 	INSERT INTO wf_document_tags(doctype_id, doc_id, tag)
-	VALUES(?, ?, ?)
+	VALUES($1, $2, $3)
 	`
 	for _, tag := range tags {
 		tag = strings.TrimSpace(tag)
@@ -885,9 +882,9 @@ func (_Documents) RemoveTag(otx *sql.Tx, dtype DocTypeID, id DocumentID, tag str
 	// Now write the database entry.
 	q := `
 	DELETE FROM wf_document_tags
-	WHERE doctype_id = ?
-	AND doc_id = ?
-	AND tag = ?
+	WHERE doctype_id = $1
+	AND doc_id = $2
+	AND tag = $3
 	`
 	_, err = tx.Exec(q, dtype, id, tag)
 	if err != nil {
@@ -917,8 +914,8 @@ func (_Documents) ChildrenIDs(dtype DocTypeID, id DocumentID) ([]struct {
 	q := `
 	SELECT child_doctype_id, child_id
 	FROM wf_document_children
-	WHERE parent_doctype_id = ?
-	AND parent_id = ?
+	WHERE parent_doctype_id = $1
+	AND parent_id = $2
 	`
 	rows, err := db.Query(q, dtype, id)
 	if err != nil {

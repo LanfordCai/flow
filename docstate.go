@@ -68,12 +68,8 @@ func (_DocStates) New(otx *sql.Tx, name string) (DocStateID, error) {
 		tx = otx
 	}
 
-	res, err := tx.Exec("INSERT INTO wf_docstates_master(name) VALUES(?)", name)
-	if err != nil {
-		return 0, err
-	}
 	var id int64
-	id, err = res.LastInsertId()
+	err = tx.QueryRow("INSERT INTO wf_docstates_master(name) VALUES($1) RETURNING id", name).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -106,7 +102,7 @@ func (_DocStates) List(offset, limit int64) ([]*DocState, error) {
 	SELECT id, name
 	FROM wf_docstates_master
 	ORDER BY id
-	LIMIT ? OFFSET ?
+	LIMIT $1 OFFSET $2
 	`
 	rows, err := db.Query(q, limit, offset)
 	if err != nil {
@@ -140,7 +136,7 @@ func (_DocStates) Get(id DocStateID) (*DocState, error) {
 	q := `
 	SELECT name
 	FROM wf_docstates_master
-	WHERE id = ?
+	WHERE id = $1
 	`
 	row := db.QueryRow(q, id)
 	err := row.Scan(&elem.Name)
@@ -161,7 +157,7 @@ func (_DocStates) GetByName(name string) (*DocState, error) {
 	}
 
 	var elem DocState
-	row := db.QueryRow("SELECT id, name FROM wf_docstates_master WHERE name = ?", name)
+	row := db.QueryRow("SELECT id, name FROM wf_docstates_master WHERE name = $1", name)
 	err := row.Scan(&elem.ID, &elem.Name)
 	if err != nil {
 		return nil, err
@@ -189,7 +185,7 @@ func (_DocStates) Rename(otx *sql.Tx, id DocStateID, name string) error {
 		tx = otx
 	}
 
-	_, err = tx.Exec("UPDATE wf_docstates_master SET name = ? WHERE id = ?", name, id)
+	_, err = tx.Exec("UPDATE wf_docstates_master SET name = $1 WHERE id = $2", name, id)
 	if err != nil {
 		return err
 	}

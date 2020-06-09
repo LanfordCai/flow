@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS wf_ac_group_hierarchy;
 --
 
 CREATE TABLE wf_ac_group_hierarchy (
-    id INT NOT NULL AUTO_INCREMENT,
+    id SERIAL,
     ac_id INT NOT NULL,
     group_id INT NOT NULL,
     reports_to INT NOT NULL,

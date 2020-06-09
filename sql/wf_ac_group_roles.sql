@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS wf_ac_group_roles;
 --
 
 CREATE TABLE wf_ac_group_roles (
-    id INT NOT NULL AUTO_INCREMENT,
+    id SERIAL,
     ac_id INT NOT NULL,
     group_id INT NOT NULL,
     role_id INT NOT NULL,

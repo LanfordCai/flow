@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS wf_docevent_application;
 --
 
 CREATE TABLE wf_docevent_application (
-    id INT NOT NULL AUTO_INCREMENT,
+    id SERIAL,
     doctype_id INT NOT NULL,
     doc_id INT NOT NULL,
     from_state_id INT NOT NULL,

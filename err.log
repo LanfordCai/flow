@@ -1,0 +1,70 @@
+DROP DATABASE
+CREATE DATABASE
+NOTICE:  table "wf_doctypes_master" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_docstates_master" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+INSERT 0 1
+NOTICE:  table "wf_docactions_master" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "users_master" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+CREATE VIEW
+NOTICE:  table "wf_groups_master" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_roles_master" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+INSERT 0 1
+INSERT 0 1
+NOTICE:  table "wf_group_users" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_role_docactions" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_access_contexts" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_ac_group_roles" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_ac_group_hierarchy" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+CREATE VIEW
+NOTICE:  table "wf_document_children" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_document_blobs" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_document_tags" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_docstate_transitions" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_docevents" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_docevent_application" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_workflows" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_workflow_nodes" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_messages" does not exist, skipping
+DROP TABLE
+CREATE TABLE
+NOTICE:  table "wf_mailboxes" does not exist, skipping
+DROP TABLE
+CREATE TABLE
